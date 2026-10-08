@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "Please cite the original Visual Microphone paper when using this software."
+title: "vismic"
+type: software
+version: 0.1.0
+license: MIT
+date-released: 2026-10-08
+preferred-citation:
+  type: article
+  title: "The Visual Microphone: Passive Recovery of Sound from Video"
+  authors:
+    - family-names: Davis
+      given-names: Abe
+    - family-names: Rubinstein
+      given-names: Michael
+    - family-names: Wadhwa
+      given-names: Neal
+    - family-names: Mysore
+      given-names: Gautham J.
+    - family-names: Durand
+      given-names: Frédo
+    - family-names: Freeman
+      given-names: William T.
+  journal: "ACM Transactions on Graphics"
+  volume: 33
+  issue: 4
+  year: 2014
+  doi: 10.1145/2601097.2601119
