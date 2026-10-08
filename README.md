@@ -1,24 +1,57 @@
-# vismic
+<div align="center">
 
-## The demo this repo is building toward
+# shiver
 
-| 1. Film | 2. Show the silent clip | 3. Play recovered sound |
-| --- | --- | --- |
-| A crinkled chip bag beside a speaker, camera locked to a tripod | The ROI barely appears to move | The sweep—and eventually speech—comes back from the pixels |
+**Every object shivers when sound hits it. This reads the shiver.**
+
+Recover audio from silent video by measuring sub-pixel vibrations as phase shifts.
+
+![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)
+![NumPy](https://img.shields.io/badge/built%20with-NumPy-013243?style=flat-square&logo=numpy&logoColor=white)
+![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)
+![Status](https://img.shields.io/badge/status-experimental-orange?style=flat-square)
+![Paper](https://img.shields.io/badge/paper-SIGGRAPH%202014-blue?style=flat-square)
+
+![Synthetic](https://img.shields.io/badge/synthetic%200.001%20px-passing-brightgreen?style=flat-square)
+![Raven](https://img.shields.io/badge/MIT%20Raven%20clip-0.63%20corr-yellow?style=flat-square)
+![MIDI gate](https://img.shields.io/badge/MIDI%20gate-failing-red?style=flat-square)
+![Roadmap](https://img.shields.io/badge/roadmap-6%2F12-blue?style=flat-square)
+![Vibe](https://img.shields.io/badge/vibe-pixels%20are%20talking-8A2BE2?style=flat-square)
+
+[Demo](#the-demo) · [Scoreboard](#scoreboard) · [Quickstart](#quickstart) · [How it works](#how-it-works) · [Reproduce MIT](#reproduce-the-mit-rolling-shutter-check) · [Roadmap](#roadmap)
+
+</div>
+
+---
 
 > [!WARNING]
-> **Current vibe: the pixels are talking, but we do not speak fluent chip bag yet.** Synthetic sub-pixel recovery works, and the Raven benchmark produces a related signal. The MIDI note-sequence test still fails, so this is an active experiment—not a magic silent-video-to-audio button. Bring curiosity, not courtroom evidence.
+> **Current vibe: the pixels are talking, but we do not speak fluent chip bag yet.** Synthetic sub-pixel recovery works, and the Raven benchmark produces a related signal. The MIDI note-sequence test still fails. This is an active experiment, not a magic silent-video-to-audio button. Bring curiosity, not courtroom evidence.
 
-More precisely: the phase pipeline recovers a known **0.001-pixel** sinusoidal shift from a noisy synthetic texture with greater than 0.95 absolute correlation. It also runs end-to-end on MIT's public 60 fps rolling-shutter Raven clip, reaching 0.626 waveform and 0.840 log-spectrum correlation with MIT's recovered reference after lag/rate alignment. The rolling-shutter MIDI note-sequence gate still fails; see the [validation log](docs/validation.md). A real chip-bag demo belongs above this paragraph as soon as it exists; there is intentionally no polished fake demo in its place.
+## The demo
 
-`vismic` is a small, inspectable Python implementation of the core idea in Davis et al., [*The Visual Microphone: Passive Recovery of Sound from Video*](https://people.csail.mit.edu/mrub/VisualMic/) (SIGGRAPH 2014): tiny object vibrations become measurable as phase changes in complex spatial filters.
+The repo is building toward this:
 
-> [!IMPORTANT]
-> Sample rate is physics, not a software option. In the high-speed/global-shutter path, one video frame produces one signal sample. A 240 fps clip cannot yield intelligible speech. Audio-band recovery from ordinary frame-rate video needs calibrated rolling-shutter line timing; `vismic` will not guess it.
+| 1. Film | 2. Watch the silent clip | 3. Hear it |
+| --- | --- | --- |
+| A crinkled chip bag next to a speaker, camera locked to a tripod | The ROI barely appears to move | The sweep (and eventually speech) comes back from the pixels |
 
-## Run the first milestone
+There is no demo GIF yet, on purpose. A real chip-bag clip goes here the day it works, and not before.
 
-Python 3.10+ is required.
+## Scoreboard
+
+Every claim in this README maps to a row here. Raw numbers and commands live in [`docs/validation.md`](docs/validation.md).
+
+| Test | Result | Status |
+| --- | --- | --- |
+| Synthetic 0.001 px sinusoid in noisy texture | abs correlation above 0.95 | ✅ pass |
+| MIT Raven clip (public, 60 fps rolling shutter) | 0.626 waveform, 0.840 log-spectrum vs MIT's recovered audio, after lag/rate alignment | 🟡 provisional |
+| Rolling-shutter MIDI note sequence | does not recover the notes | ❌ failing |
+| Filmed tone sweep (our own footage) | not run yet | ⬜ todo |
+| Speech | not run yet | ⬜ todo |
+
+## Quickstart
+
+Python 3.10+.
 
 ```bash
 python -m venv .venv
@@ -29,40 +62,68 @@ vismic --synthetic --fps 1000 --frequency 73 --amplitude 0.001 -o out.wav
 pytest
 ```
 
-Expected terminal output includes a displacement `|correlation|` close to 1. Phase polarity is arbitrary, so the benchmark correctly compares absolute correlation.
+The terminal output should show a displacement `|correlation|` close to 1. Phase polarity is arbitrary, so the benchmark compares absolute correlation.
 
-For a high-speed video (system FFmpeg or the optional `imageio` dependency is required):
+High-speed video (needs system FFmpeg or the optional `imageio` extra):
 
 ```bash
 pip install -e '.[video]'
 vismic in.mp4 --roi 120,80,256,256 --fps 2200 -o recovered.wav
 ```
 
-Use the **capture** rate for `--fps`. Some high-speed cameras store misleading playback metadata in the container. You can also feed a NumPy array shaped `(time, height, width[, channels])`:
+Use the **capture** rate for `--fps`. Some high-speed cameras write misleading playback rates into the container.
+
+Raw arrays work too, shaped `(time, height, width[, channels])`:
 
 ```bash
 vismic frames.npy --fps 2200 -o recovered.wav
 ```
 
-## What is implemented
+## Sample rate is physics
 
-The current CPU prototype is deliberately narrow:
+No software option changes this.
 
-1. Build a multi-scale, multi-orientation complex Fourier filter bank.
-2. Measure local motion as phase change against the first frame.
-3. Suppress flat/noisy regions using reference amplitude squared.
-4. Cross-correlate band traces, correct lag and arbitrary polarity, then combine them.
-5. High-pass, perform conservative spectral subtraction, and write mono PCM WAV.
+| Capture mode | Samples per second | What it means |
+| --- | --- | --- |
+| High-speed, global shutter | one per frame, so the capture fps | 240 fps cannot give intelligible speech. MIT's clips run 2,200 to 20,000 fps |
+| Rolling shutter | one per sensor row, with holes between frames | Needs calibrated line timing. `vismic` will not guess it |
 
-The filter bank is an original compact log-Gabor/analytic prototype, not a byte-for-byte port of the authors' MATLAB complex steerable pyramid. That keeps the synthetic milestone easy to audit while preserving the relevant phase behavior. A Riesz-pyramid backend and GPU acceleration are planned once real-video correctness is measured.
+Rolling-shutter numbers for the Raven camera, from the paper: about 16 μs line delay, about 5 ms frame delay, 61,920 row samples/s effective, 1/2000 s exposure, roughly 2 kHz recoverable ceiling.
 
-Rolling-shutter mode extracts horizontal motion per sensor row, maps `(frame, row)` measurements onto the calibrated line clock, fills inter-frame holes with bidirectional autoregressive prediction, and retains an `observed` mask. It follows the paper's coherent horizontal-motion model, so the object/camera geometry still matters. General camera timing calibration remains open work.
+## How it works
 
-## Reproduce the official rolling-shutter check
+Tiny surface motion changes the local phase of complex spatial filter responses. Measure the phase, get the motion, and the motion is the sound. Based on Davis et al., [*The Visual Microphone*](https://people.csail.mit.edu/mrub/VisualMic/) (SIGGRAPH 2014).
 
-MIT's data page includes two rolling-shutter videos in addition to the much larger high-speed captures. The smaller Raven video is 32 MB, 1280×720 Motion JPEG at 59.94 fps. The paper reports about 16 μs line delay, about 5 ms frame delay, an effective 61,920 row samples/s, 1/2000 s exposure, and a roughly 2 kHz recoverable ceiling for this camera.
+```mermaid
+flowchart LR
+    A["video or .npy"] --> B["ROI crop"]
+    B --> C["complex filter bank<br/>scales x orientations"]
+    C --> D["phase change<br/>vs first frame"]
+    D --> E["weight by<br/>amplitude squared"]
+    E --> F["lag + polarity<br/>alignment"]
+    F --> G["combine bands"]
+    G --> H["highpass +<br/>spectral subtraction"]
+    H --> I["recovered.wav"]
+```
 
-Third-party assets are downloaded to the ignored `data/mit/` directory and are never redistributed by this repository:
+Flat and noisy regions get low weight, textured edges get high weight. That one step is most of why a chip bag works and a blank wall does not.
+
+**Rolling-shutter mode** swaps the middle of the pipeline:
+
+```mermaid
+flowchart LR
+    A["per-row horizontal<br/>motion"] --> B["map frame, row onto<br/>the line clock"]
+    B --> C["fill inter-frame gaps<br/>bidirectional AR prediction"]
+    C --> D["signal + observed mask"]
+```
+
+It follows the paper's coherent horizontal-motion model, so object and camera geometry still matter.
+
+The filter bank is an original compact log-Gabor/analytic prototype, not a port of the authors' MATLAB complex steerable pyramid. That keeps the synthetic milestone easy to audit while keeping the phase behavior that matters. A Riesz-pyramid backend and GPU path come after real-video correctness is measured.
+
+## Reproduce the MIT rolling-shutter check
+
+MIT's data page has two rolling-shutter videos next to the much larger high-speed captures. The small one, Raven, is 32 MB, 1280x720 Motion JPEG at 59.94 fps. Assets download into the gitignored `data/mit/` directory. This repo never redistributes them.
 
 ```bash
 python scripts/fetch_mit_data.py references
@@ -79,15 +140,24 @@ vismic-compare artifacts/raven-vismic.wav \
   --fmax 2000 --json
 ```
 
-The comparator resamples, finds the best lag, tolerates arbitrary phase polarity and gain, and reports absolute waveform correlation, SI-SDR, log-power-spectrum correlation, and time-varying log-spectrogram correlation. Use the source WAV and MIT's recovered WAV as separate references; they answer different questions.
+`vismic-compare` resamples, finds the best lag, tolerates arbitrary polarity and gain, and reports:
 
-The 2200 Hz chips/MIDI input is 10.8 GB. Its download requires an explicit size acknowledgement:
+- absolute waveform correlation
+- SI-SDR
+- log-power-spectrum correlation
+- time-varying log-spectrogram correlation
+
+Compare against the source WAV and MIT's recovered WAV separately. They answer different questions.
+
+The 2200 Hz chips/MIDI input is 10.8 GB, so the fetcher wants an explicit acknowledgement:
 
 ```bash
 python scripts/fetch_mit_data.py chips-midi --allow-large
 ```
 
-## Roadmap and gates
+## Roadmap
+
+**6 of 12 done.**
 
 - [x] Deterministic sub-pixel synthetic generator
 - [x] Phase recovery benchmark and tests
@@ -99,19 +169,34 @@ python scripts/fetch_mit_data.py chips-midi --allow-large
 - [ ] Validate a filmed tone sweep and publish raw/recovered artifacts
 - [ ] Calibrate line delay from camera metadata or a flicker target
 - [ ] Recover speech
-- [ ] Add the visual spectrogram and vibration-heatmap viewer
+- [ ] Visual spectrogram and vibration-heatmap viewer
 - [ ] Profile, then move the measured hot loop to CuPy/Rust/wgpu
 
-## Capture checklist for the tone-sweep gate
+## Help wanted
 
-- Lock exposure, focus, white balance, and stabilization; use a solid tripod.
+- **Filmed footage with measured line delay.** Phone model, fps, readout direction, raw file, and the speaker's source audio. This is the biggest gap.
+- **Line-delay calibration** from metadata or a flicker target.
+- **Riesz pyramid backend.**
+- **Why the MIDI gate fails.** If you see it, open an issue.
+
+<details>
+<summary><b>Capture checklist for the tone-sweep gate</b></summary>
+
+<br>
+
+- Lock exposure, focus, white balance, and stabilization. Use a solid tripod.
 - Fill the ROI with a textured, specular object such as a chip bag.
 - Use bright continuous lighting and the shortest practical exposure.
 - Record the emitted sweep separately as ground truth.
 - Record the actual capture fps. For rolling shutter, also measure line delay and readout direction.
 - Keep raw footage. Compression and rescaling can destroy the phase signal.
 
-## Layout
+</details>
+
+<details>
+<summary><b>Repo layout</b></summary>
+
+<br>
 
 ```text
 src/vismic/
@@ -122,19 +207,23 @@ src/vismic/
   metrics.py          lag/rate-tolerant reference comparison
   audio.py            cleanup and WAV export
   io.py / cli.py      inputs, ROI, command line
-tests/                 synthetic, timing, I/O tests
-docs/validation.md     pass/fail benchmark record
+tests/                synthetic, timing, I/O tests
+docs/validation.md    pass/fail benchmark record
 ```
 
-## Scope, consent, and provenance
+</details>
 
-This is an experimental measurement tool, not a promise that arbitrary silent footage contains recoverable audio. Only process recordings you are authorized to analyze and follow local privacy and recording laws.
+## Scope, consent, provenance
 
-The algorithm is based on the paper and its public examples; this repository contains an independent implementation and no MIT sample footage or MATLAB code. The fetcher only downloads assets from their original host into a gitignored directory. See the [project page and samples](https://people.csail.mit.edu/mrub/VisualMic/), [official data and results](https://data.csail.mit.edu/vidmag/VisualMic/), and the [MIT open-access manuscript](https://dspace.mit.edu/handle/1721.1/100023).
+This is an experimental measurement tool, not a promise that arbitrary silent footage contains recoverable audio. Only process recordings you are authorized to analyze, and follow local privacy and recording laws.
+
+This repo is an independent implementation. It contains no MIT sample footage and no MATLAB code. The fetcher only pulls assets from their original host. The linked manuscript and third-party data have their own terms, and the authors' work is marked patent-pending by MIT.
+
+Links: [project page and samples](https://people.csail.mit.edu/mrub/VisualMic/) · [official data and results](https://data.csail.mit.edu/vidmag/VisualMic/) · [open-access manuscript](https://dspace.mit.edu/handle/1721.1/100023)
 
 ## Citation
 
-If this project is useful in research, cite the original work:
+If this is useful in research, cite the original work:
 
 ```bibtex
 @article{Davis2014VisualMic,
@@ -149,4 +238,6 @@ If this project is useful in research, cite the original work:
 }
 ```
 
-Code in this repository is MIT licensed. The linked manuscript and third-party data have their own terms.
+## License
+
+Code in this repository is MIT licensed.
